@@ -20,6 +20,8 @@ using System.Drawing;
 using System.Diagnostics;
 using System.Windows.Forms;
 using System.Resources;
+using System.ComponentModel;
+using System.Linq;
 
 namespace RunCat
 {
@@ -43,8 +45,11 @@ namespace RunCat
         private Icon[] icons;
         private Timer animateTimer = new Timer();
         private Timer cpuTimer = new Timer();
-        
-      
+        private readonly Container _container;
+        private readonly ToolStripMenuItem _lightMenuItem;
+        private readonly ToolStripMenuItem _darkMenuItem;
+        private readonly IDictionary<string, ToolStripMenuItem> _colorMenuItems;
+
         public RunCatApplicationContext()
         {
             SystemEvents.UserPreferenceChanged += new UserPreferenceChangedEventHandler(UserPreferenceChanged);
@@ -52,22 +57,58 @@ namespace RunCat
             cpuUsage = new PerformanceCounter("Processor", "% Processor Time", "_Total");
             _ = cpuUsage.NextValue(); // discards first return value
 
+            _container = new Container();
             notifyIcon = new NotifyIcon()
             {
                 Icon = Resources.light_cat0,
-                ContextMenu = new ContextMenu(new MenuItem[]
-                {
-                    new MenuItem("Exit", Exit)
-                }),
+                ContextMenuStrip = new ContextMenuStrip(_container),
                 Text = "0.0%",
                 Visible = true
             };
+            var colorItems = new ToolStripMenuItem("Color");
+            {
+                _lightMenuItem = new ToolStripMenuItem("Light", null, ColorMenuItem_Click, "light");
+                _darkMenuItem = new ToolStripMenuItem("Dark", null, ColorMenuItem_Click, "dark");
+                _colorMenuItems = new Dictionary<string, ToolStripMenuItem>
+                {
+                    ["light"] = _lightMenuItem,
+                    ["dark"] = _darkMenuItem
+                };
+            }
+            colorItems.DropDownItems.AddRange(_colorMenuItems.Values.ToArray());
+
+            notifyIcon.ContextMenuStrip.Items.AddRange(new ToolStripItem[]{
+                colorItems,
+                new ToolStripSeparator(),
+                new ToolStripMenuItem("Exit", null, Exit)
+            });
 
             SetIcons();
             SetAnimation();
             CPUTick();
             StartObserveCPU();
             current = 1;
+        }
+
+        private void ColorMenuItem_Click(object sender, EventArgs e)
+        {
+            ToolStripMenuItem changeItem = (ToolStripMenuItem)sender;
+            ChangeCheckStateColorMenuItem(changeItem);
+            ChangeIcons(changeItem.Name);
+        }
+        private void ChangeCheckStateColorMenuItem(ToolStripMenuItem changeItem)
+        {
+            foreach (ToolStripMenuItem item in _colorMenuItems.Values)
+            {
+                if (ReferenceEquals(item, changeItem))
+                {
+                    item.CheckState = CheckState.Indeterminate;
+                }
+                else
+                {
+                    item.CheckState = CheckState.Unchecked;
+                }
+            }
         }
 
         private string GetAppsUseTheme()
@@ -86,9 +127,8 @@ namespace RunCat
             }
         }
 
-        private void SetIcons()
+        private void ChangeIcons(string newTheme)
         {
-            string newTheme = GetAppsUseTheme();
             if (theme.Equals(newTheme)) return;
             theme = newTheme;
             ResourceManager rm = Resources.ResourceManager;
@@ -101,6 +141,12 @@ namespace RunCat
                 (Icon)rm.GetObject(theme + "_cat4")
             }
             .ToArray();
+        }
+        private void SetIcons()
+        {
+            string newTheme = GetAppsUseTheme();
+            ChangeIcons(newTheme);
+            ChangeCheckStateColorMenuItem(_colorMenuItems[theme]);
         }
 
         private void UserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
@@ -150,5 +196,11 @@ namespace RunCat
             cpuTimer.Start();
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _container.Dispose();
+            base.Dispose(disposing);
+        }
     }
 }
